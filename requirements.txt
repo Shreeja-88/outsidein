@@ -2,3 +2,5 @@
 streamlit
 requests
 pytest
+fastapi
+uvicorn

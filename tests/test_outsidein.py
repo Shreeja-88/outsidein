@@ -76,6 +76,88 @@ def test_fallback_when_model_returns_invalid_json(monkeypatch):
     assert mission["steps"]
 
 
+def test_fallback_when_model_returns_non_object_json(monkeypatch):
+    class BadResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"response": '["this", "is", "not", "a", "mission"]'}
+
+    monkeypatch.setattr(
+        outsidein.requests, "post", lambda *args, **kwargs: BadResponse()
+    )
+
+    mission, source = outsidein.generate_mission("Forest", 15, "Wildlife")
+
+    assert source == "Curated offline fallback"
+    assert isinstance(mission, dict)
+    assert mission["title"]
+
+
+def test_fallback_when_model_response_is_missing_required_fields(monkeypatch):
+    class BadResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "response": json.dumps(
+                    {
+                        "title": "Broken quest",
+                        "duration_minutes": 5,
+                        "mission": "Only part of a mission",
+                        "steps": ["One step"],
+                    }
+                )
+            }
+
+    monkeypatch.setattr(
+        outsidein.requests, "post", lambda *args, **kwargs: BadResponse()
+    )
+
+    mission, source = outsidein.generate_mission("Riverside", 10, "Water birds")
+
+    assert source == "Curated offline fallback"
+    assert mission["reflection_question"]
+
+
+@pytest.mark.parametrize(
+    "bad_mission",
+    [
+        [],
+        {"title": "Broken", "duration_minutes": 5, "steps": ["A", "B"]},
+        {
+            "title": "Broken",
+            "duration_minutes": 5,
+            "mission": "Pick up clues.",
+            "steps": "not a list",
+            "reflection_question": "Why?",
+            "safety_note": "Be safe.",
+        },
+        {
+            "title": "Broken",
+            "duration_minutes": 5,
+            "mission": "Pick up clues.",
+            "steps": ["A", "B", "C", "D", "E"],
+            "reflection_question": "Why?",
+            "safety_note": "Be safe.",
+        },
+        {
+            "title": "Broken",
+            "duration_minutes": 5,
+            "mission": "Pick up clues.",
+            "steps": ["A", 1],
+            "reflection_question": "Why?",
+            "safety_note": "Be safe.",
+        },
+    ],
+)
+def test_rejects_invalid_mission_shape(bad_mission):
+    with pytest.raises(ValueError):
+        outsidein.validate_mission(bad_mission, max_minutes=5)
+
+
 @pytest.mark.parametrize("duration", [0, -1, 6, True, "5"])
 def test_rejects_invalid_duration(duration):
     mission = valid_mission()
